@@ -4,12 +4,11 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	
+
 	"github.com/go-redis/redis"
 	"github.com/nlopes/slack"
 	"go.uber.org/zap"
 )
-
 
 func killHandler(sigChan <-chan os.Signal, stopChan chan<- struct{}, sugar *zap.SugaredLogger) {
 	<-sigChan
@@ -32,7 +31,7 @@ func main() {
 	}()
 
 	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == ""{
+	if redisAddr == "" {
 		panic("REDIS_ADDR envar not set")
 	}
 
@@ -69,7 +68,6 @@ func main() {
 	wg.Wait()
 	sugar.Info("goodbye")
 }
-
 
 func redisToSlack(pubsub *redis.PubSub, done <-chan struct{}, client *slack.Client, sugar *zap.SugaredLogger) {
 	c := pubsub.Channel()
