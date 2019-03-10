@@ -128,6 +128,7 @@ func slackFromRedis(rtm *slack.RTM, rclient *redis.Client, done <-chan struct{},
 			data, typeOk := event.Data.(*slack.MessageEvent)
 			if !typeOk {
 				sugar.Errorw("could not deserialize slack message", "event", event)
+				continue
 			}
 
 			sugar.Debugw("data message", "message", data.Msg.Text)
