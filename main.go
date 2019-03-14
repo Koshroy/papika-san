@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/signal"
 	"sync"
@@ -9,6 +10,13 @@ import (
 	"github.com/nlopes/slack"
 	"go.uber.org/zap"
 )
+
+type slackPayload struct {
+	slack.PostMessageParameters
+
+	Text        string             `json:"text"`
+	Attachments []slack.Attachment `json:"attachments"`
+}
 
 func killHandler(sigChan <-chan os.Signal, stopChan chan<- struct{}, sugar *zap.SugaredLogger) {
 	<-sigChan
@@ -98,7 +106,24 @@ func redisToSlack(pubsub *redis.PubSub, done <-chan struct{}, client *slack.Clie
 			return
 		case payload := <-c:
 			sugar.Debugf("received message %s", payload.Payload)
-			_, _, err := client.PostMessage("C29133R96", slack.MsgOptionText(payload.Payload, false))
+
+			var sPayload slackPayload
+			err := json.Unmarshal([]byte(payload.Payload), &sPayload)
+			if err != nil {
+				sugar.Warnw("could not convert parse payload", "payload", payload, "error", err)
+				_, _, err := client.PostMessage("C29133R96", slack.MsgOptionText(payload.Payload, false), slack.MsgOptionAsUser(true))
+				if err != nil {
+					sugar.Errorw("could not post message", "message", payload)
+				}
+				continue
+			}
+
+			sugar.Debugw("decoded slack payload", "payload", sPayload)
+			params := slack.MsgOptionPostMessageParameters(sPayload.PostMessageParameters)
+			textParam := slack.MsgOptionText(sPayload.Text, false)
+			attachments := slack.MsgOptionAttachments(sPayload.Attachments...)
+
+			_, _, err = client.PostMessage(sPayload.Channel, params, textParam, attachments)
 			if err != nil {
 				sugar.Errorw("could not post message", "message", payload)
 			}
@@ -132,7 +157,13 @@ func slackFromRedis(rtm *slack.RTM, rclient *redis.Client, done <-chan struct{},
 			}
 
 			sugar.Debugw("data message", "message", data.Msg.Text)
-			pub := rclient.Publish("from_slack", data.Msg.Text)
+
+			slackJSON, err := json.Marshal(data.Msg)
+			if err != nil {
+				sugar.Errorw("could not serialize slack message to JSON", "error", err)
+				continue
+			}
+			pub := rclient.Publish("from_slack", slackJSON)
 			if pub.Err() != nil {
 				sugar.Errorw("could not publish to redis", "error", pub.Err())
 			}
